@@ -1,0 +1,19 @@
+# Ignore Python virtual environment
+smart-time-backedn/venv/
+
+# Ignore env files
+smart-time-backedn/.env
+
+# Ignore __pycache__ and compiled files
+**/__pycache__/
+*.py[cod]
+
+# Node
+node_modules/
+dist/
+
+# OS
+.DS_Store
+
+# General
+*.log
