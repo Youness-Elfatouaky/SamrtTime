@@ -423,21 +423,46 @@ def extract_date_from_message(message: str):
     return parsed.date().isoformat() if parsed else None
 
 
-def set_last_context(user_id: int, db: Session, title: str = None, date: str = None):
-    db.query(ChatMessage).filter(ChatMessage.user_id ==
-                                 user_id, ChatMessage.role == "context").delete()
-    ctx = {}
+def set_last_context_meeting(user_id: int, db: Session, title: str = None, date: str = None):
+    db.query(ChatMessage).filter(ChatMessage.user_id == user_id,
+                                 ChatMessage.role == "context_meeting").delete()
+    ctx = {"type": "meeting"}
     if title:
         ctx["title"] = title
     if date:
         ctx["date"] = date
-    db.add(ChatMessage(user_id=user_id, role="context", content=json.dumps(ctx)))
+    db.add(ChatMessage(user_id=user_id,
+           role="context_meeting", content=json.dumps(ctx)))
     db.commit()
 
 
-def get_last_context(user_id: int, db: Session):
+def get_last_context_meeting(user_id: int, db: Session):
     last_ctx = db.query(ChatMessage).filter(ChatMessage.user_id == user_id,
-                                            ChatMessage.role == "context").order_by(desc(ChatMessage.id)).first()
+                                            ChatMessage.role == "context_meeting").order_by(desc(ChatMessage.id)).first()
+    if last_ctx:
+        try:
+            ctx = json.loads(last_ctx.content)
+            return ctx.get("title"), ctx.get("date")
+        except Exception:
+            return None, None
+    return None, None
+
+
+def set_last_context_task(user_id: int, db: Session, title: str = None, date: str = None):
+    db.query(ChatMessage).filter(ChatMessage.user_id == user_id,
+                                 ChatMessage.role == "context_task").delete()
+    ctx = {"type": "task"}
+    if title:
+        ctx["title"] = title
+    if date:
+        ctx["date"] = date
+    db.add(ChatMessage(user_id=user_id, role="context_task", content=json.dumps(ctx)))
+    db.commit()
+
+
+def get_last_context_task(user_id: int, db: Session):
+    last_ctx = db.query(ChatMessage).filter(ChatMessage.user_id == user_id,
+                                            ChatMessage.role == "context_task").order_by(desc(ChatMessage.id)).first()
     if last_ctx:
         try:
             ctx = json.loads(last_ctx.content)
@@ -472,6 +497,31 @@ def clear_pending_meeting(user_id: int, db: Session):
     db.commit()
 
 
+def set_pending_task(user_id: int, db: Session, task_data: dict):
+    db.query(ChatMessage).filter(ChatMessage.user_id == user_id,
+                                 ChatMessage.role == "pending_task").delete()
+    db.add(ChatMessage(user_id=user_id, role="pending_task",
+           content=json.dumps(task_data)))
+    db.commit()
+
+
+def get_pending_task(user_id: int, db: Session):
+    last_ctx = db.query(ChatMessage).filter(ChatMessage.user_id == user_id,
+                                            ChatMessage.role == "pending_task").order_by(desc(ChatMessage.id)).first()
+    if last_ctx:
+        try:
+            return json.loads(last_ctx.content)
+        except Exception:
+            return None
+    return None
+
+
+def clear_pending_task(user_id: int, db: Session):
+    db.query(ChatMessage).filter(ChatMessage.user_id == user_id,
+                                 ChatMessage.role == "pending_task").delete()
+    db.commit()
+
+
 def get_recent_chat_history(user_id: int, db: Session, n: int = 10):
     return db.query(ChatMessage).filter(ChatMessage.user_id == user_id).order_by(desc(ChatMessage.id)).limit(n).all()[::-1]
 
@@ -495,13 +545,26 @@ def infer_context_from_history(history):
 
 def create_task_backend(user_id: int, title: str, start_time: str = None, end_time: str = None, description: str = None, priority: str = None, db: Session = None):
     from app.models.task import Task, TaskPriority
+    # Map 'normal' to 'medium' and validate priority
+    if priority:
+        priority_lower = priority.lower()
+        if priority_lower == "normal":
+            priority_enum = TaskPriority.medium
+        elif priority_lower in TaskPriority.__members__:
+            priority_enum = TaskPriority[priority_lower]
+        elif priority_lower in [p.value for p in TaskPriority]:
+            priority_enum = TaskPriority(priority_lower)
+        else:
+            priority_enum = TaskPriority.medium
+    else:
+        priority_enum = TaskPriority.medium
     task = Task(
         user_id=user_id,
         title=title,
         start_time=datetime.fromisoformat(start_time) if start_time else None,
         end_time=datetime.fromisoformat(end_time) if end_time else None,
         description=description,
-        priority=TaskPriority(priority) if priority else TaskPriority.medium
+        priority=priority_enum
     )
     db.add(task)
     db.commit()
@@ -681,21 +744,55 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
         if match:
             return match.group(1).strip()
         return None
+
     referenced_title = extract_title_from_message(message) or inferred_title
     referenced_date = extract_date_from_message(message) or inferred_date
 
-    if referenced_title or referenced_date:
-        set_last_context(current_user.id, db,
-                         referenced_title, referenced_date)
-    ctx_title, ctx_date = get_last_context(current_user.id, db)
+    # Determine if this is a meeting or task intent (simple heuristic)
+    is_task = any(kw in message.lower() for kw in ["task", "todo", "remind", "reminder"]) and not any(
+        kw in message.lower() for kw in ["meeting", "call", "appointment", "event"])
+    is_meeting = any(kw in message.lower() for kw in [
+                     "meeting", "call", "appointment", "event"]) and not is_task
+
+    # Only update context if the message is not a confirmation
+    confirmation_words = ["yes", "ok", "confirm",
+                          "do it", "schedule it", "that time"]
+    is_confirmation = any(word in message.lower()
+                          for word in confirmation_words)
+
+    if not is_confirmation and (referenced_title or referenced_date):
+        # Only update the relevant context
+        if is_task:
+            set_last_context_task(current_user.id, db,
+                                  referenced_title, referenced_date)
+        elif is_meeting:
+            set_last_context_meeting(
+                current_user.id, db, referenced_title, referenced_date)
+        else:
+            # fallback: set both only if truly ambiguous
+            set_last_context_task(current_user.id, db,
+                                  referenced_title, referenced_date)
+            set_last_context_meeting(
+                current_user.id, db, referenced_title, referenced_date)
+
+    ctx_title_meeting, ctx_date_meeting = get_last_context_meeting(
+        current_user.id, db)
+    ctx_title_task, ctx_date_task = get_last_context_task(current_user.id, db)
 
     context_line = ""
-    if ctx_date or ctx_title:
+    if ctx_date_meeting or ctx_title_meeting:
         context_line = "Current context: "
-        if ctx_title:
-            context_line += f"meeting '{ctx_title}'"
-        if ctx_date:
-            context_line += f" on {ctx_date}"
+        if ctx_title_meeting:
+            context_line += f"meeting '{ctx_title_meeting}'"
+        if ctx_date_meeting:
+            context_line += f" on {ctx_date_meeting}"
+        context_line += "."
+    if ctx_date_task or ctx_title_task:
+        context_line += " "
+        if ctx_title_task:
+            context_line += f"task '{ctx_title_task}'"
+        if ctx_date_task:
+            context_line += f" on {ctx_date_task}"
         context_line += "."
 
     messages: list[dict] = [
@@ -744,23 +841,77 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
 
         if not reply.tool_calls:
             user_message = message.lower()
-            if any(kw in user_message for kw in ["yes", "schedule the meeting", "schedule it", "that time", "ok", "confirm"]):
-                pending = get_pending_meeting(current_user.id, db)
-                if pending and "proposed_start" in pending and "proposed_end" in pending:
-                    result = create_meeting_backend(
-                        user_id=current_user.id,
-                        title=pending.get("title", "Untitled Meeting"),
-                        start_time=pending["proposed_start"],
-                        end_time=pending["proposed_end"],
-                        location=pending.get("location"),
-                        description=pending.get("description"),
-                        db=db
-                    )
-                    clear_pending_meeting(current_user.id, db)
-                    db.add(ChatMessage(user_id=current_user.id, role="assistant",
-                           content=f"The meeting '{pending.get('title', 'Untitled Meeting')}' has been scheduled for {pending['proposed_start']} to {pending['proposed_end']}!"))
-                    db.commit()
-                    return {"reply": f"The meeting '{pending.get('title', 'Untitled Meeting')}' has been scheduled for {pending['proposed_start']} to {pending['proposed_end']}!"}
+            if any(kw in user_message for kw in confirmation_words):
+                pending_meeting = get_pending_meeting(current_user.id, db)
+                pending_task = get_pending_task(current_user.id, db)
+                # --- Fix: Only check for task slot conflicts when confirming a task ---
+                if pending_task and "start_time" in pending_task and "end_time" in pending_task:
+                    start_dt = datetime.fromisoformat(
+                        pending_task["start_time"])
+                    end_dt = datetime.fromisoformat(pending_task["end_time"])
+                    if is_task_time_slot_available(current_user.id, db, start_dt, end_dt):
+                        result = create_task_backend(
+                            user_id=current_user.id,
+                            title=pending_task.get(
+                                "title", ctx_title_task or "Untitled Task"),
+                            start_time=pending_task["start_time"],
+                            end_time=pending_task["end_time"],
+                            description=pending_task.get("description"),
+                            priority=pending_task.get("priority"),
+                            db=db
+                        )
+                        clear_pending_task(current_user.id, db)
+                        db.add(ChatMessage(user_id=current_user.id, role="assistant",
+                               content=f"The task '{pending_task.get('title', ctx_title_task or 'Untitled Task')}' has been scheduled for {pending_task['start_time']} to {pending_task['end_time']}!"))
+                        db.commit()
+                        return {"reply": f"The task '{pending_task.get('title', ctx_title_task or 'Untitled Task')}' has been scheduled for {pending_task['start_time']} to {pending_task['end_time']}!"}
+                    else:
+                        # Suggest alternative task slots
+                        duration = int(
+                            (end_dt - start_dt).total_seconds() // 60)
+                        alt = get_free_time_for_task_backend(
+                            current_user.id, start_dt.date().isoformat(), duration, db)["free_slots"]
+                        alt_str = "\n".join([
+                            f"- {slot['start'][11:16]} - {slot['end'][11:16]}" for slot in alt
+                        ]) if alt else "No available slots."
+                        db.add(ChatMessage(user_id=current_user.id, role="assistant",
+                               content=f"The time you requested for the task '{pending_task.get('title', ctx_title_task or 'Untitled Task')}' is not available. Here are some available slots for your task:\n{alt_str}"))
+                        db.commit()
+                        return {"reply": f"The time you requested for the task '{pending_task.get('title', ctx_title_task or 'Untitled Task')}' is not available. Here are some available slots for your task:\n{alt_str}"}
+                elif pending_meeting and "proposed_start" in pending_meeting and "proposed_end" in pending_meeting:
+                    start_dt = datetime.fromisoformat(
+                        pending_meeting["proposed_start"])
+                    end_dt = datetime.fromisoformat(
+                        pending_meeting["proposed_end"])
+                    if is_time_slot_available(current_user.id, db, start_dt, end_dt):
+                        result = create_meeting_backend(
+                            user_id=current_user.id,
+                            title=pending_meeting.get(
+                                "title", ctx_title_meeting or "Untitled Meeting"),
+                            start_time=pending_meeting["proposed_start"],
+                            end_time=pending_meeting["proposed_end"],
+                            location=pending_meeting.get("location"),
+                            description=pending_meeting.get("description"),
+                            db=db
+                        )
+                        clear_pending_meeting(current_user.id, db)
+                        db.add(ChatMessage(user_id=current_user.id, role="assistant",
+                               content=f"The meeting '{pending_meeting.get('title', ctx_title_meeting or 'Untitled Meeting')}' has been scheduled for {pending_meeting['proposed_start']} to {pending_meeting['proposed_end']}!"))
+                        db.commit()
+                        return {"reply": f"The meeting '{pending_meeting.get('title', ctx_title_meeting or 'Untitled Meeting')}' has been scheduled for {pending_meeting['proposed_start']} to {pending_meeting['proposed_end']}!"}
+                    else:
+                        # Suggest alternative meeting slots
+                        duration = int(
+                            (end_dt - start_dt).total_seconds() // 60)
+                        alt = get_free_time_backend(
+                            current_user.id, start_dt.date().isoformat(), duration, db)["free_slots"]
+                        alt_str = "\n".join([
+                            f"- {slot['start'][11:16]} - {slot['end'][11:16]}" for slot in alt
+                        ]) if alt else "No available slots."
+                        db.add(ChatMessage(user_id=current_user.id, role="assistant",
+                               content=f"The time you requested for the meeting '{pending_meeting.get('title', ctx_title_meeting or 'Untitled Meeting')}' is not available. Here are some available slots for your meeting:\n{alt_str}"))
+                        db.commit()
+                        return {"reply": f"The time you requested for the meeting '{pending_meeting.get('title', ctx_title_meeting or 'Untitled Meeting')}' is not available. Here are some available slots for your meeting:\n{alt_str}"}
             db.add(ChatMessage(user_id=current_user.id,
                    role="assistant", content=reply.content))
             db.commit()
@@ -771,11 +922,17 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
             name = tool_call.function.name
             args = json.loads(tool_call.function.arguments)
 
-            if name in ["update_meeting", "delete_meeting", "update_task", "delete_task"]:
-                if ("date" not in args or not args["date"]) and ctx_date:
-                    args["date"] = ctx_date
-                if ("title" not in args or not args["title"]) and ctx_title:
-                    args["title"] = ctx_title
+            # Use correct context for meetings and tasks
+            if name in ["update_meeting", "delete_meeting"]:
+                if ("date" not in args or not args["date"]) and ctx_date_meeting:
+                    args["date"] = ctx_date_meeting
+                if ("title" not in args or not args["title"]) and ctx_title_meeting:
+                    args["title"] = ctx_title_meeting
+            if name in ["update_task", "delete_task"]:
+                if ("date" not in args or not args["date"]) and ctx_date_task:
+                    args["date"] = ctx_date_task
+                if ("title" not in args or not args["title"]) and ctx_title_task:
+                    args["title"] = ctx_title_task
 
             if name in ["create_meeting", "update_meeting", "create_task", "update_task"]:
                 start = args.get("start_time") or args.get("new_start_time")
@@ -784,18 +941,49 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
                 start_dt = dateparser.parse(
                     start, settings={"RELATIVE_BASE": now_dt}) if start else None
                 if start_dt and start_dt < now_dt:
+                    # Instead of auto-rescheduling, prompt the user for confirmation
                     tomorrow_same_time = (now_dt + timedelta(days=1)).replace(
                         hour=start_dt.hour, minute=start_dt.minute, second=0, microsecond=0)
-                    tool_outputs.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": name,
-                        "content": json.dumps({
-                            "error": "The requested start time is in the past.",
-                            "suggestion": f"Would you like to schedule it for tomorrow at {tomorrow_same_time.strftime('%H:%M')}?"
+                    # Store pending intent for confirmation
+                    if name in ["create_task", "update_task"]:
+                        task_data = {
+                            "title": args.get("title", ctx_title_task),
+                            "description": args.get("description"),
+                            "start_time": tomorrow_same_time.isoformat(),
+                            "end_time": (tomorrow_same_time + timedelta(minutes=20)).isoformat(),
+                            "priority": args.get("priority")
+                        }
+                        set_pending_task(current_user.id, db, task_data)
+                        tool_outputs.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": name,
+                            "content": json.dumps({
+                                "error": "The requested start time is in the past.",
+                                "suggestion": f"Would you like to schedule the task '{args.get('title', ctx_title_task)}' for tomorrow at {tomorrow_same_time.strftime('%H:%M')} instead?"
+                            })
                         })
-                    })
-                    continue
+                        continue
+                    elif name in ["create_meeting", "update_meeting"]:
+                        meeting_data = {
+                            "title": args.get("title", ctx_title_meeting),
+                            "description": args.get("description"),
+                            "location": args.get("location"),
+                            "start_time": tomorrow_same_time.isoformat(),
+                            "end_time": (tomorrow_same_time + timedelta(minutes=20)).isoformat()
+                        }
+                        set_pending_meeting(current_user.id, db, meeting_data)
+                        tool_outputs.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": name,
+                            "content": json.dumps({
+                                "error": "The requested start time is in the past.",
+                                "suggestion": f"Would you like to schedule the meeting '{args.get('title', ctx_title_meeting)}' for tomorrow at {tomorrow_same_time.strftime('%H:%M')} instead?"
+                            })
+                        })
+                        continue
+
                 if start_dt:
                     if not end:
                         end_dt = start_dt + timedelta(minutes=20)
@@ -818,7 +1006,7 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
                             duration = int(
                                 (end_dt - start_dt).total_seconds() // 60)
                             meeting_data = {
-                                "title": args.get("title", ctx_title),
+                                "title": args.get("title", ctx_title_meeting),
                                 "description": args.get("description"),
                                 "location": args.get("location"),
                                 "start_time": start_dt.isoformat(),
@@ -832,13 +1020,16 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
                                 "name": name,
                                 "content": json.dumps({"error": "Time slot not available", "alternatives": alt})
                             })
+                            # Store as pending meeting
+                            set_pending_meeting(
+                                current_user.id, db, meeting_data)
                             continue
                     elif name in ["create_task", "update_task"]:
                         if not is_task_time_slot_available(current_user.id, db, start_dt, end_dt, exclude_task_id=args.get("task_id")):
                             duration = int(
                                 (end_dt - start_dt).total_seconds() // 60)
                             task_data = {
-                                "title": args.get("title", ctx_title),
+                                "title": args.get("title", ctx_title_task),
                                 "description": args.get("description"),
                                 "start_time": start_dt.isoformat(),
                                 "end_time": end_dt.isoformat(),
@@ -852,6 +1043,8 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
                                 "name": name,
                                 "content": json.dumps({"error": "Time slot not available", "alternatives": alt})
                             })
+                            # Store as pending task
+                            set_pending_task(current_user.id, db, task_data)
                             continue
 
             if "start_time" in args:
