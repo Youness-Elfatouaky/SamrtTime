@@ -716,8 +716,68 @@ def get_free_time_for_task_backend(user_id: int, date: str, duration_minutes: in
     return {"free_slots": free_slots}
 
 
+def is_relevant_query(message: str) -> bool:
+    """
+    Determines if a message is relevant to time management by checking for:
+    1. Intent keywords related to calendar/task management
+    2. Question patterns about schedule/tasks
+    3. Time-related expressions
+    4. Action verbs related to calendar management
+    """
+    # Core intent keywords indicating time management purpose
+    intent_keywords = {
+        "meeting", "task", "schedule", "appointment", "event",
+        "todo", "reminder", "deadline", "calendar", "agenda",
+        "slot", "availability", "busy", "free"
+    }
+
+    # Action verbs specific to calendar/task management
+    action_verbs = {
+        "create", "schedule", "set", "plan", "book",
+        "cancel", "delete", "remove", "reschedule", "move",
+        "update", "change", "check", "show", "list", "find",
+        "complete", "finish", "have", "add", "organize"
+    }
+
+    # Time-related expressions
+    time_expressions = {
+        "today", "tomorrow", "yesterday", "week",
+        "month", "morning", "afternoon", "evening",
+        "time", "date", "day", "hour", "minute",
+        "available", "free", "busy", "now", "later",
+        "daily", "weekly", "monthly", "am", "pm",
+        "next", "previous", "upcoming", "soon"
+    }
+
+    # Question words and patterns that indicate schedule queries
+    question_patterns = {
+        "what", "when", "how", "any", "is", "are",
+        "do", "does", "did", "will", "would", "can",
+        "could", "should", "tell", "show", "list"
+    }
+
+    message_lower = message.lower().split()
+    message_set = set(message_lower)
+
+    # Different valid patterns for a relevant query:
+    has_intent = any(word in message_set for word in intent_keywords)
+    has_action = any(word in message_set for word in action_verbs)
+    has_time = any(word in message_set for word in time_expressions)
+    has_question = any(word in message_set for word in question_patterns)
+
+    # A query is relevant if it matches any of these patterns:
+    # 1. Contains an intent keyword (meeting, task, etc.)
+    # 2. Contains both an action verb AND a time expression
+    # 3. Contains both a question word AND a time expression
+    return has_intent or (has_action and has_time) or (has_question and has_time)
+
+
 @router.post("/chat")
+# Check if the message is relevant to time management
 def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not is_relevant_query(message):
+        return {"reply": "I am your time management assistant. I can help you with:\n- Scheduling meetings and appointments\n- Managing tasks and reminders\n- Checking your calendar and availability\n- Setting deadlines and priorities\n\nPlease ask me something related to these topics."}
+
     from openai.types.chat import ChatCompletionMessage
 
     today = datetime.now().strftime('%Y-%m-%d')
@@ -836,6 +896,7 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
             tool_choice="auto"
         )
 
+        
         reply: ChatCompletionMessage = response.choices[0].message
         messages.append(reply)
 
