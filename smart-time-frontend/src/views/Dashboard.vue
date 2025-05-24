@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import Layout from '../components/Layout.vue'
 import { taskService, meetingService } from '../services/api'
 import moment from 'moment'
@@ -35,6 +35,143 @@ const getPriorityColor = (priority) => {
     default: return 'text-gray-600'
   }
 }
+
+// Computed property to combine and sort today's tasks and meetings
+const todayEvents = computed(() => {
+  const today = moment().startOf('day')
+  const tomorrow = moment().add(1, 'day').startOf('day')
+
+  // Convert tasks to calendar events
+  const taskEvents = tasks.value
+    .filter(task => {
+      const taskDate = moment(task.end_time)
+      return taskDate.isSameOrAfter(today) && taskDate.isBefore(tomorrow)
+    })
+    .map(task => ({
+      ...task,
+      type: 'task',
+      start_time: task.start_time || task.end_time, // Use end_time as fallback if no start_time
+    }))
+
+  // Convert meetings to calendar events
+  const meetingEvents = meetings.value
+    .filter(meeting => {
+      const meetingDate = moment(meeting.start_time)
+      return meetingDate.isSameOrAfter(today) && meetingDate.isBefore(tomorrow)
+    })
+    .map(meeting => ({
+      ...meeting,
+      type: 'meeting'
+    }))
+
+  // Combine and sort by start time
+  return [...taskEvents, ...meetingEvents]
+    .sort((a, b) => moment(a.start_time).valueOf() - moment(b.start_time).valueOf())
+})
+
+// Computed property to process events and handle overlaps
+const processedEvents = computed(() => {
+  const events = todayEvents.value
+  const timeSlots = new Map() // Track events by 30-minute slots
+  const processed = []
+
+  events.forEach(event => {
+    const startTime = moment(event.start_time)
+    const endTime = moment(event.end_time)
+    const startSlot = startTime.hours() * 2 + Math.floor(startTime.minutes() / 30)
+    const endSlot = endTime.hours() * 2 + Math.ceil(endTime.minutes() / 30)
+    let column = 0
+
+    // Find first available column
+    while (true) {
+      let columnTaken = false
+      for (let slot = startSlot; slot < endSlot; slot++) {
+        const key = `${slot}-${column}`
+        if (timeSlots.has(key)) {
+          columnTaken = true
+          break
+        }
+      }
+      if (!columnTaken) break
+      column++
+    }
+
+    // Mark time slots as taken
+    for (let slot = startSlot; slot < endSlot; slot++) {
+      timeSlots.set(`${slot}-${column}`, event.id)
+    }
+
+    // Find max columns for this time range
+    let maxColumns = 1
+    for (let slot = startSlot; slot < endSlot; slot++) {
+      let cols = 0
+      while (timeSlots.has(`${slot}-${cols}`)) cols++
+      maxColumns = Math.max(maxColumns, cols)
+    }
+
+    processed.push({
+      ...event,
+      column,
+      totalColumns: maxColumns,
+      startSlot,
+      endSlot
+    })
+  })
+
+  return processed
+})
+
+// Method to calculate event position and height
+const getEventStyle = (event) => {
+  const startTime = moment(event.start_time)
+  const endTime = moment(event.end_time)
+  const startMinutes = startTime.hours() * 60 + startTime.minutes()
+  const durationMinutes = endTime.diff(startTime, 'minutes')
+  const columnWidth = 100 / event.totalColumns // percentage width
+  const hourHeight = 64 // 2 * 32px for each hour (allowing for 30-minute precision)
+
+  return {
+    top: `${(startMinutes / 30) * (hourHeight / 2)}px`,
+    height: `${Math.max((durationMinutes / 30) * (hourHeight / 2), 24)}px`,
+    left: `${event.column * columnWidth}%`,
+    width: `${columnWidth - 1}%`, // Subtract 1% for gap
+    minHeight: '24px',
+  }
+}
+
+// Computed property to get current time position in pixels
+const getCurrentTimePosition = computed(() => {
+  const now = moment()
+  const minutes = now.hours() * 60 + now.minutes()
+  return (minutes / 30) * 32 // 32px per 30 minutes
+})
+
+// Computed property to organize events by hour
+const eventsByHour = computed(() => {
+  const hourSlots = Array(24).fill(null).map(() => []);
+  
+  todayEvents.value.forEach(event => {
+    const startHour = moment(event.start_time).hour();
+    const endHour = moment(event.end_time).hour();
+    
+    for (let hour = startHour; hour <= endHour; hour++) {
+      hourSlots[hour].push({
+        ...event,
+        isStart: hour === startHour,
+        isEnd: hour === endHour,
+        startMinutes: hour === startHour ? moment(event.start_time).minutes() : 0,
+        endMinutes: hour === endHour ? moment(event.end_time).minutes() : 59
+      });
+    }
+  });
+  
+  return hourSlots;
+});
+
+// Compute current hour for highlighting
+const currentHour = computed(() => {
+  return moment().hour();
+});
 </script>
 
 <template>  <Layout>
@@ -161,8 +298,58 @@ const getPriorityColor = (priority) => {
               </div>
             </div>
           </div>
+        </div>      </div>
+
+      <!-- Today's Calendar Section -->
+      <div class="bg-white shadow rounded-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-medium text-gray-900">Today's Schedule</h2>
+          <div class="text-sm text-gray-500">
+            {{ moment().format('dddd, MMMM D') }}
+          </div>
+        </div>
+        
+        <!-- Calendar Grid -->
+        <div class="grid grid-cols-[80px_1fr] gap-2">
+          <div class="space-y-4">
+            <!-- Time markers column -->
+            <div v-for="hour in 24" :key="hour" class="h-16 flex items-center justify-end pr-2">
+              <span class="text-sm text-gray-500">{{ (hour - 1).toString().padStart(2, '0') }}:00</span>
+            </div>
+          </div>
+          
+          <!-- Events column -->
+          <div class="space-y-4">
+            <div v-for="(events, hour) in eventsByHour" :key="hour" 
+              class="h-16 flex items-center gap-2 pl-2"
+              :class=" [
+                hour === currentHour ? 'bg-blue-50' : 'bg-gray-50',
+                'rounded'
+              ]"
+            >
+              <template v-if="events.length > 0">
+                <div v-for="event in events" :key="event.id"
+                  class="flex-1 px-3 py-1 rounded text-xs flex items-center gap-2"
+                  :class=" [
+                    event.type === 'meeting' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700',
+                  ]"
+                >
+                  <span class="font-medium truncate">{{ event.title }}</span>
+                  <span class="whitespace-nowrap text-[10px] opacity-75">
+                    {{ event.isStart ? moment(event.start_time).format('HH:mm') : '' }}
+                    {{ event.isStart || event.isEnd ? '-' : '→' }}
+                    {{ event.isEnd ? moment(event.end_time).format('HH:mm') : '' }}
+                  </span>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </Layout>
 </template>
+
+<style scoped>
+/* Remove scrollbar styles as they're no longer needed */
+</style>

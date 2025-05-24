@@ -8,11 +8,14 @@ const tasks = ref([])
 const loading = ref(true)
 const showNewTaskModal = ref(false)
 const editingTask = ref(null)
+const showDeleteConfirm = ref(false)
+const taskToDelete = ref(null)
 
 const newTask = ref({
   title: '',
   description: '',
   priority: 'medium',
+  status: 'pending',
   start_time: '',
   end_time: ''
 })
@@ -22,6 +25,8 @@ const searchQuery = ref('')
 const viewMode = ref('list') // 'list', 'grid', 'calendar'
 const sortBy = ref('date') // 'date', 'priority', 'title'
 const sortOrder = ref('asc') // 'asc', 'desc'
+const selectedFilter = ref('all') // 'all', 'today', 'week', 'high-priority'
+const currentWeek = ref(moment())
 
 onMounted(async () => {
   await fetchTasks()
@@ -49,6 +54,27 @@ const filteredTasks = computed(() => {
       task.title.toLowerCase().includes(query) || 
       task.description?.toLowerCase().includes(query)
     )
+  }
+
+  // Apply category filter
+  if (selectedFilter.value !== 'all') {
+    const today = moment().startOf('day')
+    const endOfToday = moment().endOf('day')
+    const endOfWeek = moment().endOf('week')
+
+    filtered = filtered.filter(task => {
+      const taskDate = moment(task.end_time)
+      switch (selectedFilter.value) {
+        case 'today':
+          return taskDate.isBetween(today, endOfToday, 'day', '[]')
+        case 'week':
+          return taskDate.isBetween(today, endOfWeek, 'day', '[]')
+        case 'high-priority':
+          return task.priority === 'high'
+        default:
+          return true
+      }
+    })
   }
   
   // Apply sorting
@@ -88,24 +114,30 @@ const handleSubmit = async () => {
 
 const startEdit = (task) => {
   editingTask.value = task
-  newTask.value = {
+    newTask.value = {
     title: task.title,
     description: task.description || '',
     priority: task.priority,
+    status: task.status || 'pending',
     start_time: task.start_time ? moment(task.start_time).format('YYYY-MM-DDTHH:mm') : '',
     end_time: task.end_time ? moment(task.end_time).format('YYYY-MM-DDTHH:mm') : ''
   }
   showNewTaskModal.value = true
 }
 
-const deleteTask = async (id) => {
-  if (confirm('Are you sure you want to delete this task?')) {
-    try {
-      await taskService.deleteTask(id)
-      await fetchTasks()
-    } catch (error) {
-      console.error('Error deleting task:', error)
-    }
+const confirmDelete = (task) => {
+  taskToDelete.value = task
+  showDeleteConfirm.value = true
+}
+
+const deleteTask = async () => {
+  try {
+    await taskService.deleteTask(taskToDelete.value.id)
+    await fetchTasks()
+    showDeleteConfirm.value = false
+    taskToDelete.value = null
+  } catch (error) {
+    console.error('Error deleting task:', error)
   }
 }
 
@@ -116,6 +148,7 @@ const closeModal = () => {
     title: '',
     description: '',
     priority: 'medium',
+    status: 'pending',
     start_time: '',
     end_time: ''
   }
@@ -130,8 +163,53 @@ const getPriorityColor = (priority) => {
   }
 }
 
+const formatStatus = (status) => {
+  switch (status) {
+    case 'in_progress': return 'In Progress'
+    case 'completed': return 'Completed'
+    case 'pending': return 'Pending'
+    default: return 'Pending'
+  }
+}
+
 const formatDateTime = (date) => {
   return moment(date).format('MMM D, YYYY h:mm A')
+}
+
+const formatTime = (date) => {
+  return moment(date).format('HH:mm')
+}
+
+const calendarTasks = computed(() => {
+  return filteredTasks.value.filter(task => task.start_time && task.end_time)
+})
+
+const getTaskPosition = (task) => {
+  const start = moment(task.start_time)
+  const end = moment(task.end_time)
+  
+  const dayStart = moment().startOf('day')
+  const totalMinutes = 24 * 60
+  
+  const startMinutes = (start.hour() * 60 + start.minute())
+  const duration = moment.duration(end.diff(start)).asMinutes()
+  
+  const top = (startMinutes / totalMinutes) * 100
+  const height = (duration / totalMinutes) * 100
+  
+  return {
+    top: `${top}%`,
+    height: `${height}%`
+  }
+}
+
+const getTaskColor = (task) => {
+  const baseColors = {
+    high: 'bg-red-100 text-red-800',
+    medium: 'bg-yellow-100 text-yellow-800',
+    low: 'bg-green-100 text-green-800'
+  }
+  return baseColors[task.priority] || 'bg-gray-100 text-gray-800'
 }
 
 const toggleSelectAll = () => {
@@ -175,15 +253,48 @@ const deleteSelectedTasks = async () => {
   }
 }
 
+const isToday = (date) => {
+  return moment().isSame(moment(date), 'day')
+}
+
+const weekDays = computed(() => {
+  const startOfWeek = currentWeek.value.clone().startOf('week')
+  return Array.from({ length: 7 }, (_, i) => startOfWeek.clone().add(i, 'day'))
+})
+
+const getTasksForDay = (date) => {
+  return tasks.value.filter(task => {
+    const taskDate = moment(task.start_time)
+    return taskDate.isSame(moment(date), 'day')
+  })
+}
+
+const getFilteredTasksForDay = (date) => {
+  const tasksForDay = getTasksForDay(date)
+  
+  switch (selectedFilter.value) {
+    case 'today':
+      return tasksForDay.filter(task => moment(task.start_time).isSame(moment(), 'day'))
+    case 'week':
+      return tasksForDay.filter(task => 
+        moment(task.start_time).isSame(moment(), 'week') || 
+        moment(task.end_time).isSame(moment(), 'week')
+      )
+    case 'high-priority':
+      return tasksForDay.filter(task => task.priority === 'high')
+    default:
+      return tasksForDay
+  }
+}
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeyPress)
 })
 </script>
 
 <template>  <Layout>
-    <div class="h-full space-y-6">
-      <!-- Header Section -->
-      <div class="bg-white shadow rounded-lg p-6 sticky top-0 z-10">
+    <div class="h-full space-y-6">      <!-- Header Section -->
+      <div class="bg-white shadow rounded-lg p-6 sticky top-0 z-50">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
           <!-- Left side -->
           <div>
@@ -286,27 +397,49 @@ onMounted(() => {
               Add Task
             </button>
           </div>
-        </div>
-
-        <!-- Quick Filters -->
+        </div>        <!-- Quick Filters -->
         <div class="mt-6 flex flex-wrap gap-4">
           <button 
-            class="px-4 py-2 rounded-full text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            @click="selectedFilter = 'all'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2',
+              selectedFilter === 'all' 
+                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 focus:ring-blue-500'
+                : 'bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-gray-500'
+            ]"
           >
             All Tasks
           </button>
           <button 
-            class="px-4 py-2 rounded-full text-sm font-medium bg-gray-50 text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            @click="selectedFilter = 'today'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2',
+              selectedFilter === 'today' 
+                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 focus:ring-blue-500'
+                : 'bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-gray-500'
+            ]"
           >
             Today
           </button>
           <button 
-            class="px-4 py-2 rounded-full text-sm font-medium bg-gray-50 text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            @click="selectedFilter = 'week'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2',
+              selectedFilter === 'week' 
+                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 focus:ring-blue-500'
+                : 'bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-gray-500'
+            ]"
           >
             This Week
           </button>
           <button 
-            class="px-4 py-2 rounded-full text-sm font-medium bg-gray-50 text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            @click="selectedFilter = 'high-priority'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2',
+              selectedFilter === 'high-priority' 
+                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 focus:ring-blue-500'
+                : 'bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-gray-500'
+            ]"
           >
             High Priority
           </button>
@@ -354,24 +487,23 @@ onMounted(() => {
 
         <!-- List View -->
         <div v-else-if="viewMode === 'list'" class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-300">
-            <thead class="bg-gray-50">
+          <table class="min-w-full divide-y divide-gray-300">            <thead class="bg-gray-50">
               <tr>
-                <th scope="col" class="relative py-4 pl-6 pr-3">
+                <th scope="col" class="w-12 py-4 pl-6 pr-3">
                   <input
                     type="checkbox"
                     :checked="selectedTasks.size === filteredTasks.length"
                     :indeterminate="selectedTasks.size > 0 && selectedTasks.size < filteredTasks.length"
                     @change="toggleSelectAll"
-                    class="absolute left-6 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                 </th>
-                <th scope="col" class="py-4 pl-6 pr-3 text-left text-sm font-semibold text-gray-900">Title & Description</th>
-                <th scope="col" class="px-3 py-4 text-left text-sm font-semibold text-gray-900">Timeline</th>
-                <th scope="col" class="px-3 py-4 text-left text-sm font-semibold text-gray-900">Priority</th>
-                <th scope="col" class="px-3 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
-                <th scope="col" class="relative py-4 pl-3 pr-6">
-                  <span class="sr-only">Actions</span>
+                <th scope="col" class="w-1/3 py-4 pl-6 pr-3 text-left text-sm font-semibold text-gray-900">Title & Description</th>
+                <th scope="col" class="w-1/4 px-3 py-4 text-left text-sm font-semibold text-gray-900">Timeline</th>
+                <th scope="col" class="w-24 px-3 py-4 text-left text-sm font-semibold text-gray-900">Priority</th>
+                <th scope="col" class="w-24 px-3 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
+                <th scope="col" class="w-32 py-4 pl-3 pr-6 text-right text-sm font-semibold text-gray-900">
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -379,8 +511,7 @@ onMounted(() => {
               <tr v-for="task in filteredTasks" :key="task.id" :class=" [
                 'hover:bg-gray-50 transition-colors duration-150',
                 selectedTasks.has(task.id) ? 'bg-blue-50' : ''
-              ]">
-                <td class="relative py-4 pl-6 pr-3">
+              ]">                <td class="w-12 py-4 pl-6 pr-3 align-top">
                   <input
                     type="checkbox"
                     :checked="selectedTasks.has(task.id)"
@@ -388,23 +519,21 @@ onMounted(() => {
                     class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                 </td>
-                <td class="py-4 pl-6 pr-3">
-                  <div class="flex items-center">
-                    <div>
-                      <div class="text-sm font-medium text-gray-900">{{ task.title }}</div>
-                      <div class="text-sm text-gray-500">{{ task.description || 'No description' }}</div>
-                    </div>
+                <td class="w-1/3 py-4 pl-6 pr-3 align-top">
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium text-gray-900 truncate text-left">{{ task.title }}</div>
+                    <div class="text-sm text-gray-500 mt-1 text-left">{{ task.description || 'No description' }}</div>
                   </div>
                 </td>
-                <td class="whitespace-nowrap px-3 py-4">
+                <td class="w-1/4 py-4 px-3 align-top text-left">
                   <div class="text-sm text-gray-900">
                     {{ task.start_time ? formatDateTime(task.start_time) : 'Not set' }}
                   </div>
-                  <div class="text-sm text-gray-500">
+                  <div class="text-sm text-gray-500 mt-1">
                     to {{ task.end_time ? formatDateTime(task.end_time) : 'Not set' }}
                   </div>
                 </td>
-                <td class="px-3 py-4">
+                <td class="w-24 py-4 px-3 text-left">
                   <span 
                     :class=" [
                       'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
@@ -418,12 +547,21 @@ onMounted(() => {
                     {{ task.priority }}
                   </span>
                 </td>
-                <td class="px-3 py-4">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                    {{ task.status || 'Pending' }}
+                <td class="w-24 py-4 px-3 text-left">
+                  <span 
+                    :class="[
+                      'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+                      {
+                        'bg-gray-100 text-gray-800': task.status === 'pending',
+                        'bg-yellow-100 text-yellow-800': task.status === 'in_progress',
+                        'bg-green-100 text-green-800': task.status === 'completed'
+                      }
+                    ]"
+                  >
+                    {{ formatStatus(task.status) }}
                   </span>
                 </td>
-                <td class="relative whitespace-nowrap py-4 pl-3 pr-6 text-right text-sm font-medium">
+                <td class="w-32 py-4 pl-3 pr-6 text-right">
                   <div class="flex items-center justify-end space-x-3">
                     <button 
                       @click="startEdit(task)" 
@@ -433,9 +571,8 @@ onMounted(() => {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                       Edit
-                    </button>
-                    <button 
-                      @click="deleteTask(task.id)" 
+                    </button>                    <button 
+                      @click="confirmDelete(task)" 
                       class="text-red-600 hover:text-red-900 flex items-center"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -478,9 +615,8 @@ onMounted(() => {
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
-                  </button>
-                  <button 
-                    @click="deleteTask(task.id)" 
+                  </button>                  <button 
+                    @click="confirmDelete(task)" 
                     class="text-gray-400 hover:text-red-500"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -502,9 +638,17 @@ onMounted(() => {
                   ]"
                 >
                   {{ task.priority }}
-                </span>
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                  {{ task.status || 'Pending' }}
+                </span>                <span 
+                  :class="[
+                    'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+                    {
+                      'bg-gray-100 text-gray-800': task.status === 'pending',
+                      'bg-yellow-100 text-yellow-800': task.status === 'in_progress',
+                      'bg-green-100 text-green-800': task.status === 'completed'
+                    }
+                  ]"
+                >
+                  {{ formatStatus(task.status) }}
                 </span>
               </div>
 
@@ -514,11 +658,167 @@ onMounted(() => {
               </div>
             </div>
           </div>
-        </div>
+        </div>        <!-- Calendar View -->
+        <div v-else-if="viewMode === 'calendar'" class="p-6">
+          <div class="flex flex-col h-[800px]">
+            <!-- Calendar Header with Navigation -->
+            <div class="flex justify-between items-center mb-4">
+              <button @click="currentWeek = moment(currentWeek).subtract(1, 'week')" 
+                      class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                Previous Week
+              </button>
+              <h2 class="text-lg font-semibold">
+                {{ currentWeek.format('MMMM YYYY') }}
+              </h2>
+              <button @click="currentWeek = moment(currentWeek).add(1, 'week')"
+                      class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                Next Week
+              </button>
+            </div>            <!-- Calendar Container -->
+            <div class="flex-1 bg-white rounded-lg shadow">
+              <div class="flex h-full">
+                <!-- Time Column -->
+                <div class="w-24 flex-none bg-white border-r border-gray-200 pt-14">
+                  <div class="relative h-[calc(100%-3.5rem)]">
+                    <div v-for="hour in 24" :key="hour" 
+                         class="absolute w-full border-t border-gray-200"
+                         :style="{ top: `${((hour - 1) * (100/24))}%` }">
+                      <span class="absolute -mt-3 ml-2 text-xs font-medium text-gray-600">
+                        {{ (hour - 1).toString().padStart(2, '0') }}:00
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-        <!-- Calendar View -->
-        <div v-else class="p-6">
-          <p class="text-center text-gray-500">Calendar view coming soon!</p>
+                <!-- Days Grid -->
+                <div class="flex-1 relative">
+                  <!-- Sticky Day Headers -->
+                  <div class="sticky top-0 z-30 flex bg-white border-b border-gray-200 shadow-sm">
+                    <div v-for="day in weekDays" :key="day.format('YYYY-MM-DD')"
+                         class="flex-1 min-w-[200px] border-r border-gray-200">
+                      <div :class="['h-14 flex flex-col justify-center items-center', 
+                                   { 'bg-blue-50': isToday(day) }]">
+                        <span class="text-sm font-medium text-gray-900">
+                          {{ day.format('ddd') }}
+                        </span>
+                        <span :class="['text-2xl font-semibold', 
+                                     { 'text-blue-600': isToday(day) }]">
+                          {{ day.format('D') }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Time Grid -->
+                  <div class="relative flex h-[calc(100%-3.5rem)]">
+                    <!-- Day Columns -->
+                    <div v-for="day in weekDays" :key="day.format('YYYY-MM-DD')"
+                         class="flex-1 relative min-w-[200px] border-r border-gray-200">
+                      <!-- Time Slots -->
+                      <div v-for="hour in 24" :key="hour"
+                           :class=" [
+                             'absolute w-full border-t border-gray-200',
+                             {
+                               'bg-blue-50/20': getFilteredTasksForDay(day).some(task => 
+                                 moment(task.start_time).hour() <= (hour - 1) && 
+                                 moment(task.end_time).hour() >= (hour - 1)
+                               )
+                             }
+                           ]"
+                           :style="{ 
+                             top: `${((hour - 1) * (100/24))}%`,
+                             height: `${100/24}%`
+                           }">
+                      </div>
+                      
+                      <!-- Tasks for this day -->
+                      <div v-for="task in getFilteredTasksForDay(day)" 
+                           :key="task.id"
+                           class="absolute left-1 right-1 rounded-lg overflow-hidden shadow-md transition-all cursor-pointer hover:shadow-lg group"
+                           :style="{
+                             top: `${(moment(task.start_time).hour() + moment(task.start_time).minute() / 60) * (100/24)}%`,
+                             height: `${Math.max(moment(task.end_time).diff(moment(task.start_time), 'minutes') / (24 * 60) * 100, 6)}%`,
+                             zIndex: task.priority === 'high' ? 23 : task.priority === 'medium' ? 22 : 21
+                           }"
+                           :class="{
+                             'bg-red-50 hover:bg-red-100 border-l-4 border-red-500': task.priority === 'high',
+                             'bg-amber-50 hover:bg-amber-100 border-l-4 border-amber-500': task.priority === 'medium',
+                             'bg-emerald-50 hover:bg-emerald-100 border-l-4 border-emerald-500': task.priority === 'low'
+                           }"
+                           @click="startEdit(task)">
+                        <div class="h-full flex flex-col justify-between p-2 relative">
+                          <!-- Task Header -->
+                          <div class="flex items-center justify-between bg-white/75 rounded px-2 py-1">
+                            <div class="font-medium text-sm leading-tight truncate flex-1 mr-2" 
+                                 :class="{
+                                   'text-red-700': task.priority === 'high',
+                                   'text-amber-700': task.priority === 'medium',
+                                   'text-emerald-700': task.priority === 'low'
+                                 }"
+                                 :title="task.title">
+                              {{ task.title }}
+                            </div>
+                            <div class="text-xs text-gray-700 font-semibold whitespace-nowrap">
+                              {{ moment(task.start_time).format('HH:mm') }}
+                            </div>
+                          </div>
+                          
+                          <!-- Task Status and End Time -->
+                          <div class="mt-auto flex items-center justify-between">
+                            <span :class=" [
+                              'px-2 py-0.5 rounded-sm text-xs font-medium bg-white/75',
+                              {
+                                'text-gray-700': task.status === 'pending',
+                                'text-yellow-700': task.status === 'in_progress',
+                                'text-green-700': task.status === 'completed'
+                              }
+                            ]">{{ formatStatus(task.status) }}</span>
+                            <span class="text-xs text-gray-600 font-medium bg-white/75 px-2 py-0.5 rounded">
+                              {{ moment(task.end_time).format('HH:mm') }}
+                            </span>
+                          </div>
+
+                          <!-- Hover Card with Details -->
+                          <div class="invisible group-hover:visible absolute left-full top-0 ml-2 bg-white p-4 rounded-lg shadow-xl z-30 w-72 border border-gray-200">
+                            <div class="text-base font-medium mb-2">{{ task.title }}</div>
+                            <div class="text-sm text-gray-600 mb-3">{{ task.description || 'No description' }}</div>
+                            <div class="flex items-center justify-between text-sm">
+                              <div>
+                                <span class="font-medium text-gray-700">Priority:</span>
+                                <span :class="{
+                                  'text-red-700': task.priority === 'high',
+                                  'text-amber-700': task.priority === 'medium',
+                                  'text-emerald-700': task.priority === 'low'
+                                }">{{ task.priority }}</span>
+                              </div>
+                              <div>
+                                <span class="font-medium text-gray-700">Status:</span>
+                                <span :class="{
+                                  'text-gray-700': task.status === 'pending',
+                                  'text-yellow-700': task.status === 'in_progress',
+                                  'text-green-700': task.status === 'completed'
+                                }">{{ formatStatus(task.status) }}</span>
+                              </div>
+                            </div>
+                            <div class="mt-2 text-sm">
+                              <div class="font-medium text-gray-700">Time:</div>
+                              <div class="text-gray-600">
+                                {{ moment(task.start_time).format('MMM D, HH:mm') }} - 
+                                {{ moment(task.end_time).format('HH:mm') }}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Height setter for scroll -->
+                  <div class="absolute w-full" style="height: 1440px"></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>    <!-- Task Modal -->
@@ -590,6 +890,24 @@ onMounted(() => {
                     </label>
                   </div>
                 </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Status</label>
+                  <div class="mt-1 flex space-x-4">
+                    <label class="flex items-center">
+                      <input type="radio" v-model="newTask.status" value="pending" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                      <span class="ml-2 text-sm text-gray-700">Pending</span>
+                    </label>
+                    <label class="flex items-center">
+                      <input type="radio" v-model="newTask.status" value="in_progress" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                      <span class="ml-2 text-sm text-gray-700">In Progress</span>
+                    </label>
+                    <label class="flex items-center">
+                      <input type="radio" v-model="newTask.status" value="completed" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                      <span class="ml-2 text-sm text-gray-700">Completed</span>
+                    </label>
+                  </div>
+                </div>
               </div>
 
               <!-- Right Column -->
@@ -652,6 +970,39 @@ onMounted(() => {
             class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             {{ editingTask ? 'Save Changes' : 'Create Task' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div v-if="showDeleteConfirm" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <div class="flex items-center mb-4">
+          <div class="flex-shrink-0 bg-red-100 rounded-full p-2 mr-3">
+            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h3 class="text-lg font-medium text-gray-900">Delete Task</h3>
+        </div>
+        
+        <p class="text-sm text-gray-500 mb-6">
+          Are you sure you want to delete "{{ taskToDelete?.title }}"? This action cannot be undone.
+        </p>
+        
+        <div class="flex justify-end space-x-3">
+          <button
+            @click="showDeleteConfirm = false"
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Cancel
+          </button>
+          <button
+            @click="deleteTask"
+            class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+          >
+            Delete Task
           </button>
         </div>
       </div>
