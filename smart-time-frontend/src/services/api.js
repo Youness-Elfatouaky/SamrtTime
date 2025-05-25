@@ -51,7 +51,11 @@ export const meetingService = {
 }
 
 export const chatService = {
-    sendMessage: (message) => apiClient.post('/agent/chat', { message })
+    sendMessage: (data) => {
+        const params = new URLSearchParams()
+        params.append('message', data.content)
+        return apiClient.post('/agent/chat?' + params.toString())
+    }
 }
 
 export default apiClient

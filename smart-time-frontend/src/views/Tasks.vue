@@ -358,7 +358,7 @@ const getTaskOffset = (index, totalTasks) => {
           <!-- Right side -->
           <div class="flex items-center space-x-4">
             <!-- Search -->
-            <div class="relative flex-1 lg:max-w-xs">
+            <div v-if="viewMode != 'calendar'" class="relative flex-1 lg:max-w-xs">
               <input
                 type="text"
                 v-model="searchQuery"
@@ -413,7 +413,7 @@ const getTaskOffset = (index, totalTasks) => {
             </div>
 
             <!-- Sort Options -->
-            <div class="flex items-center space-x-2">
+            <div v-if="viewMode != 'calendar'" class="flex items-center space-x-2">
               <select
                 v-model="sortBy"
                 class="rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:outline-none focus:ring-blue-500 focus:border-blue-500"
@@ -728,7 +728,8 @@ const getTaskOffset = (index, totalTasks) => {
                       class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200">
                 Next Week
               </button>
-            </div>            <!-- Calendar Container -->
+            </div>            
+            <!-- Calendar Container -->
             <div class="flex-1 bg-white rounded-lg shadow">
               <div class="flex h-full">
                 <!-- Time Column -->        
@@ -1017,7 +1018,7 @@ const getTaskOffset = (index, totalTasks) => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h3 class="text-lg font-medium text-gray-900">Delete Task</h3>
+          <h3 class="text-lg font-medium text-gray-900">Confirm Deletion</h3>
         </div>
         
         <p class="text-sm text-gray-500 mb-6">
