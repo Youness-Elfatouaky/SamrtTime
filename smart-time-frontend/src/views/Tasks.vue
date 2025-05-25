@@ -270,26 +270,79 @@ const getTasksForDay = (date) => {
 }
 
 const getFilteredTasksForDay = (date) => {
-  const tasksForDay = getTasksForDay(date)
-  
-  switch (selectedFilter.value) {
-    case 'today':
-      return tasksForDay.filter(task => moment(task.start_time).isSame(moment(), 'day'))
-    case 'week':
-      return tasksForDay.filter(task => 
-        moment(task.start_time).isSame(moment(), 'week') || 
-        moment(task.end_time).isSame(moment(), 'week')
-      )
-    case 'high-priority':
-      return tasksForDay.filter(task => task.priority === 'high')
-    default:
-      return tasksForDay
-  }
+  return tasks.value.filter(task => {
+    if (!task.start_time || !task.end_time) return false;
+    const taskDate = moment(task.start_time);
+    return taskDate.isSame(moment(date), 'day');
+  }).filter(task => {
+    switch (selectedFilter.value) {
+      case 'today':
+        return moment(task.start_time).isSame(moment(), 'day');
+      case 'week':
+        return moment(task.start_time).isSame(moment(), 'week');
+      case 'high-priority':
+        return task.priority === 'high';
+      default:
+        return true;
+    }
+  });
 }
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeyPress)
 })
+
+const getTimeSlotPosition = (hour, day) => {
+  // Calculate accumulated height of previous slots
+  let position = 0;
+  for (let h = 0; h < hour; h++) {
+    position += getTimeSlotHeight(h, day);
+  }
+  return position;
+}
+
+const getTimeSlotHeight = (hour, day) => {
+  // Get tasks in this time slot
+  const tasksInSlot = getFilteredTasksForDay(day).filter(task => {
+    const taskStartHour = moment(task.start_time).hour();
+    const taskEndHour = moment(task.end_time).hour();
+    return taskStartHour <= hour && taskEndHour >= hour;
+  });
+
+  // Base height is 100/24 (normal hour height)
+  const baseHeight = 100/24;
+  
+  // Increase height based on number of overlapping tasks
+  return Math.max(baseHeight, baseHeight * Math.ceil(tasksInSlot.length / 2));
+}
+
+const getTasksInTimeSlot = (day, hour) => {
+  return getFilteredTasksForDay(day).filter(task => {
+    const startHour = moment(task.start_time).hour();
+    const endHour = moment(task.end_time).hour();
+    return startHour <= hour && endHour >= hour;
+  });
+}
+
+const getTasksInSameSlot = (day, task) => {
+  const taskStartHour = moment(task.start_time).hour();
+  return getFilteredTasksForDay(day).filter(t => 
+    moment(t.start_time).hour() === taskStartHour
+  );
+}
+
+const getTaskOffset = (index, totalTasks) => {
+  // Calculate left/right offsets for overlapping tasks
+  const taskWidth = 90; // percentage of slot width
+  const overlap = 10; // percentage overlap between tasks
+  
+  if (totalTasks.length <= 1) return '4px';
+  
+  const widthPerTask = taskWidth / totalTasks.length;
+  const position = index * (widthPerTask - overlap);
+  
+  return position + '%';
+}
 </script>
 
 <template>  <Layout>
@@ -658,7 +711,8 @@ onMounted(() => {
               </div>
             </div>
           </div>
-        </div>        <!-- Calendar View -->
+        </div>        
+        <!-- Calendar View -->
         <div v-else-if="viewMode === 'calendar'" class="p-6">
           <div class="flex flex-col h-[800px]">
             <!-- Calendar Header with Navigation -->
@@ -677,13 +731,14 @@ onMounted(() => {
             </div>            <!-- Calendar Container -->
             <div class="flex-1 bg-white rounded-lg shadow">
               <div class="flex h-full">
-                <!-- Time Column -->
-                <div class="w-24 flex-none bg-white border-r border-gray-200 pt-14">
-                  <div class="relative h-[calc(100%-3.5rem)]">
+                <!-- Time Column -->        
+                 <div class="w-24 flex-none bg-white border-r border-gray-200 pt-14">
+                  <div class="flex flex-col h-[calc(100%-0.5rem)]">
+                    
                     <div v-for="hour in 24" :key="hour" 
-                         class="absolute w-full border-t border-gray-200"
-                         :style="{ top: `${((hour - 1) * (100/24))}%` }">
-                      <span class="absolute -mt-3 ml-2 text-xs font-medium text-gray-600">
+                        class="flex-1 border-t border-gray-200 relative">
+                      <span class="absolute -buttom-4 pt-1.5  text-xs font-medium text-gray-600">
+                      <!-- <span class="absolute -top-2 ml-2 text-xs font-medium text-gray-600"> -->
                         {{ (hour - 1).toString().padStart(2, '0') }}:00
                       </span>
                     </div>
@@ -691,18 +746,21 @@ onMounted(() => {
                 </div>
 
                 <!-- Days Grid -->
-                <div class="flex-1 relative">
+                <div class="flex-1 relative overflow-x-auto">
                   <!-- Sticky Day Headers -->
                   <div class="sticky top-0 z-30 flex bg-white border-b border-gray-200 shadow-sm">
-                    <div v-for="day in weekDays" :key="day.format('YYYY-MM-DD')"
-                         class="flex-1 min-w-[200px] border-r border-gray-200">
+                    <div v-for="(day, index) in weekDays" :key="day.format('YYYY-MM-DD')"
+                         :class=" [
+                           'flex-1 border-r border-gray-200',
+                           index === 6 ? 'min-w-[240px]' : 'min-w-[240px]'
+                         ]">
                       <div :class="['h-14 flex flex-col justify-center items-center', 
-                                   { 'bg-blue-50': isToday(day) }]">
+                                 { 'bg-blue-50': isToday(day) }]">
                         <span class="text-sm font-medium text-gray-900">
                           {{ day.format('ddd') }}
                         </span>
                         <span :class="['text-2xl font-semibold', 
-                                     { 'text-blue-600': isToday(day) }]">
+                                   { 'text-blue-600': isToday(day) }]">
                           {{ day.format('D') }}
                         </span>
                       </div>
@@ -710,100 +768,78 @@ onMounted(() => {
                   </div>
 
                   <!-- Time Grid -->
-                  <div class="relative flex h-[calc(100%-3.5rem)]">
+                  <div class="flex h-[calc(100%-3.5rem)]">
                     <!-- Day Columns -->
-                    <div v-for="day in weekDays" :key="day.format('YYYY-MM-DD')"
-                         class="flex-1 relative min-w-[200px] border-r border-gray-200">
+                    <div v-for="(day, index) in weekDays" 
+                         :key="day.format('YYYY-MM-DD')"
+                         :class=" [
+                           'flex-1 flex flex-col border-r border-gray-200 relative',
+                           index === 6 ? 'min-w-[240px]' : 'min-w-[240px]'
+                         ]">
                       <!-- Time Slots -->
-                      <div v-for="hour in 24" :key="hour"
-                           :class=" [
-                             'absolute w-full border-t border-gray-200',
-                             {
-                               'bg-blue-50/20': getFilteredTasksForDay(day).some(task => 
-                                 moment(task.start_time).hour() <= (hour - 1) && 
-                                 moment(task.end_time).hour() >= (hour - 1)
-                               )
-                             }
-                           ]"
-                           :style="{ 
-                             top: `${((hour - 1) * (100/24))}%`,
-                             height: `${100/24}%`
-                           }">
+                      <div v-for="hour in 24" 
+                           :key="hour"
+                           class="flex-1 border-t border-gray-200 relative"
+                           :class="{ 'bg-gray-50/30': getTasksInTimeSlot(day, hour - 1).length > 0 }">
                       </div>
-                      
-                      <!-- Tasks for this day -->
+                        <!-- Tasks -->
                       <div v-for="task in getFilteredTasksForDay(day)" 
                            :key="task.id"
-                           class="absolute left-1 right-1 rounded-lg overflow-hidden shadow-md transition-all cursor-pointer hover:shadow-lg group"
+                           class="absolute inset-x-2 rounded-lg overflow-hidden shadow-sm transition-all cursor-pointer hover:shadow-lg group"
                            :style="{
-                             top: `${(moment(task.start_time).hour() + moment(task.start_time).minute() / 60) * (100/24)}%`,
-                             height: `${Math.max(moment(task.end_time).diff(moment(task.start_time), 'minutes') / (24 * 60) * 100, 6)}%`,
-                             zIndex: task.priority === 'high' ? 23 : task.priority === 'medium' ? 22 : 21
+                             top: `${moment(task.start_time).hour() / 24 * 100}%`,
+                             height: `${Math.max(moment.duration(moment(task.end_time).diff(moment(task.start_time))).asHours() / 24 * 100, 2)}%`,
+                             zIndex: 20
                            }"
                            :class="{
-                             'bg-red-50 hover:bg-red-100 border-l-4 border-red-500': task.priority === 'high',
-                             'bg-amber-50 hover:bg-amber-100 border-l-4 border-amber-500': task.priority === 'medium',
-                             'bg-emerald-50 hover:bg-emerald-100 border-l-4 border-emerald-500': task.priority === 'low'
+                             'bg-gray-100 hover:bg-gray-200': task.status === 'pending',
+                             'bg-yellow-50 hover:bg-yellow-100': task.status === 'in_progress',
+                             'bg-green-50 hover:bg-green-100': task.status === 'completed'
                            }"
                            @click="startEdit(task)">
-                        <div class="h-full flex flex-col justify-between p-2 relative">
-                          <!-- Task Header -->
-                          <div class="flex items-center justify-between bg-white/75 rounded px-2 py-1">
-                            <div class="font-medium text-sm leading-tight truncate flex-1 mr-2" 
-                                 :class="{
-                                   'text-red-700': task.priority === 'high',
-                                   'text-amber-700': task.priority === 'medium',
-                                   'text-emerald-700': task.priority === 'low'
-                                 }"
-                                 :title="task.title">
-                              {{ task.title }}
-                            </div>
-                            <div class="text-xs text-gray-700 font-semibold whitespace-nowrap">
-                              {{ moment(task.start_time).format('HH:mm') }}
-                            </div>
-                          </div>
-                          
-                          <!-- Task Status and End Time -->
-                          <div class="mt-auto flex items-center justify-between">
-                            <span :class=" [
-                              'px-2 py-0.5 rounded-sm text-xs font-medium bg-white/75',
-                              {
-                                'text-gray-700': task.status === 'pending',
-                                'text-yellow-700': task.status === 'in_progress',
-                                'text-green-700': task.status === 'completed'
-                              }
-                            ]">{{ formatStatus(task.status) }}</span>
-                            <span class="text-xs text-gray-600 font-medium bg-white/75 px-2 py-0.5 rounded">
-                              {{ moment(task.end_time).format('HH:mm') }}
-                            </span>
-                          </div>
-
-                          <!-- Hover Card with Details -->
-                          <div class="invisible group-hover:visible absolute left-full top-0 ml-2 bg-white p-4 rounded-lg shadow-xl z-30 w-72 border border-gray-200">
-                            <div class="text-base font-medium mb-2">{{ task.title }}</div>
-                            <div class="text-sm text-gray-600 mb-3">{{ task.description || 'No description' }}</div>
-                            <div class="flex items-center justify-between text-sm">
-                              <div>
-                                <span class="font-medium text-gray-700">Priority:</span>
-                                <span :class="{
-                                  'text-red-700': task.priority === 'high',
-                                  'text-amber-700': task.priority === 'medium',
-                                  'text-emerald-700': task.priority === 'low'
-                                }">{{ task.priority }}</span>
-                              </div>
-                              <div>
-                                <span class="font-medium text-gray-700">Status:</span>
-                                <span :class="{
+                        <!-- Task Content -->
+                        <div class="h-full flex items-center px-2 relative">
+                          <span class="text-xs font-medium truncate w-full" 
+                                :class="{
                                   'text-gray-700': task.status === 'pending',
                                   'text-yellow-700': task.status === 'in_progress',
                                   'text-green-700': task.status === 'completed'
-                                }">{{ formatStatus(task.status) }}</span>
+                                }">
+                            {{ task.title }}
+                            <span class="text-xs opacity-75">
+                              ({{ moment(task.start_time).format('HH:mm') }} - {{ moment(task.end_time).format('HH:mm') }})
+                            </span>
+                          </span>
+
+                          <!-- Hover Details -->
+                          <div class="invisible group-hover:visible absolute left-full top-0 ml-2 bg-white p-3 rounded-lg shadow-xl z-50 w-72 border border-gray-200">
+                            <div class="space-y-2">
+                              <div class="text-base font-medium text-gray-900">{{ task.title }}</div>
+                              <div class="text-sm text-gray-600">{{ task.description || 'No description' }}</div>
+                              <div class="flex items-center justify-between text-xs">
+                                <div>
+                                  <span class="font-medium text-gray-700">Status: </span>
+                                  <span :class="{
+                                    'text-gray-700': task.status === 'pending',
+                                    'text-yellow-700': task.status === 'in_progress',
+                                    'text-green-700': task.status === 'completed'
+                                  }">
+                                    {{ formatStatus(task.status) }}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span class="font-medium text-gray-700">Priority: </span>
+                                  <span :class="{
+                                    'text-red-700': task.priority === 'high',
+                                    'text-amber-700': task.priority === 'medium',
+                                    'text-emerald-700': task.priority === 'low'
+                                  }">
+                                    {{ task.priority }}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                            <div class="mt-2 text-sm">
-                              <div class="font-medium text-gray-700">Time:</div>
-                              <div class="text-gray-600">
-                                {{ moment(task.start_time).format('MMM D, HH:mm') }} - 
+                              <div class="text-xs text-gray-600">
+                                {{ moment(task.start_time).format('HH:mm') }} - 
                                 {{ moment(task.end_time).format('HH:mm') }}
                               </div>
                             </div>
@@ -812,9 +848,6 @@ onMounted(() => {
                       </div>
                     </div>
                   </div>
-
-                  <!-- Height setter for scroll -->
-                  <div class="absolute w-full" style="height: 1440px"></div>
                 </div>
               </div>
             </div>
