@@ -554,10 +554,8 @@ const getTaskOffset = (index, totalMeetings) => {
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Meeting Modal -->
-    <div v-if="showNewMeetingModal" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
+    </div>    <!-- Meeting Modal -->
+    <div v-if="showNewMeetingModal" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-lg max-w-lg w-full p-6">
         <h3 class="text-lg font-medium text-gray-900 mb-4">
           {{ editingMeeting ? 'Edit Meeting' : 'Schedule Meeting' }}
@@ -628,10 +626,8 @@ const getTaskOffset = (index, totalMeetings) => {
           </div>
         </form>
       </div>
-    </div>
-
-    <!-- Delete Confirmation Modal -->
-    <div v-if="showDeleteConfirm" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
+    </div>    <!-- Delete Confirmation Modal -->
+    <div v-if="showDeleteConfirm" class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-lg max-w-sm w-full p-6">
         <div class="flex items-center mb-4">
           <div class="flex-shrink-0 bg-red-100 rounded-full p-2 mr-3">

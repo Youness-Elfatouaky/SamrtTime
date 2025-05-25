@@ -723,53 +723,84 @@ def is_relevant_query(message: str) -> bool:
     2. Question patterns about schedule/tasks
     3. Time-related expressions
     4. Action verbs related to calendar management
-    """
-    # Core intent keywords indicating time management purpose
+    """    # Core intent keywords indicating time management purpose (including French)
     intent_keywords = {
         "meeting", "task", "schedule", "appointment", "event",
         "todo", "reminder", "deadline", "calendar", "agenda",
-        "slot", "availability", "busy", "free"
-    }
-
-    # Action verbs specific to calendar/task management
+        "slot", "availability", "busy", "free",
+        # French keywords
+        "tâche", "taches", "tâches", "rendez-vous", "réunion",
+        "reunions", "réunions", "agenda", "calendrier", "rappel"
+    }    # Action verbs specific to calendar/task management (including French)
     action_verbs = {
         "create", "schedule", "set", "plan", "book",
         "cancel", "delete", "remove", "reschedule", "move",
         "update", "change", "check", "show", "list", "find",
-        "complete", "finish", "have", "add", "organize"
+        "complete", "finish", "have", "add", "organize", "give", "get",
+        "do", "does", "did", "any",  # Adding common question verbs
+        # French verbs
+        "créer", "planifier", "fixer", "supprimer", "annuler",
+        "modifier", "changer", "vérifier", "montrer", "lister",
+        "trouver", "terminer", "ajouter", "organiser", "donner",
+        "donnez", "montre", "afficher", "voir", "avoir", "ai-je"
     }
 
-    # Time-related expressions
+    # Time-related expressions (including French)
     time_expressions = {
         "today", "tomorrow", "yesterday", "week",
         "month", "morning", "afternoon", "evening",
         "time", "date", "day", "hour", "minute",
         "available", "free", "busy", "now", "later",
         "daily", "weekly", "monthly", "am", "pm",
-        "next", "previous", "upcoming", "soon"
+        "next", "previous", "upcoming", "soon",
+        # French expressions
+        "aujourd'hui", "demain", "hier", "semaine",
+        "mois", "matin", "après-midi", "soir",
+        "temps", "date", "jour", "heure", "minute",
+        "disponible", "libre", "occupé", "maintenant",
+        "plus tard", "prochain", "prochaine", "bientôt"
+        # Question words and patterns that indicate schedule queries (including French)
     }
-
-    # Question words and patterns that indicate schedule queries
     question_patterns = {
         "what", "when", "how", "any", "is", "are",
         "do", "does", "did", "will", "would", "can",
-        "could", "should", "tell", "show", "list"
+        "could", "should", "tell", "show", "list",
+        # French question words
+        "quoi", "quand", "comment", "est-ce", "sont",
+        "peux", "peut", "pouvez", "pourrait", "devrait",
+        "dire", "montrer", "lister", "quel", "quelle",
+        "quels", "quelles", "où", "mes", "my"
     }
 
     message_lower = message.lower().split()
     message_set = set(message_lower)
 
-    # Different valid patterns for a relevant query:
+    # Additional preprocessing for French queries
+    message_full = message.lower()
+
+    # Combine individual words and full message checks
     has_intent = any(word in message_set for word in intent_keywords)
     has_action = any(word in message_set for word in action_verbs)
     has_time = any(word in message_set for word in time_expressions)
     has_question = any(word in message_set for word in question_patterns)
+    # Check for common phrases that might not be caught by individual words
+    common_phrases = {
+        "mes taches", "mes tâches", "my tasks",  # Tasks phrases
+        "mes reunions", "mes réunions", "my meetings",  # Meetings phrases
+        "mes rendez-vous", "my appointments",  # Appointments phrases
+        "pour demain", "for tomorrow",  # Time-related phrases
+        "any meetings", "have meetings", "do i have",  # Common English question patterns
+        "ai-je des", "est-ce que j'ai",  # Common French question patterns
+        "any tasks", "have any", "do i have any"  # Additional common patterns
+    }
 
     # A query is relevant if it matches any of these patterns:
+    has_phrase = any(phrase in message_full for phrase in common_phrases)
     # 1. Contains an intent keyword (meeting, task, etc.)
     # 2. Contains both an action verb AND a time expression
     # 3. Contains both a question word AND a time expression
-    return has_intent or (has_action and has_time) or (has_question and has_time)
+    # 4. Contains a common task/meeting/time-related phrase
+    return has_intent or has_phrase or (has_action and has_time) or (has_question and has_time)
 
 
 @router.post("/chat")
@@ -896,7 +927,6 @@ def chat_with_agent(message: str, db: Session = Depends(get_db), current_user: U
             tool_choice="auto"
         )
 
-        
         reply: ChatCompletionMessage = response.choices[0].message
         messages.append(reply)
 

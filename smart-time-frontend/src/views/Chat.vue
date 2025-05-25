@@ -104,9 +104,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <Layout>
-    <div class="max-w-5xl mx-auto h-screen flex flex-col">
-      <div class="bg-white shadow sm:rounded-lg flex-1 flex flex-col">
+  <Layout>    <div class="max-w-5xl mx-auto h-[calc(100vh-4rem)] flex flex-col">
+      <div class="bg-white shadow sm:rounded-lg flex flex-col h-full">
         <!-- Header -->
         <div class="px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -127,11 +126,10 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        
-        <!-- Messages -->
+          <!-- Messages -->
         <div 
           ref="messagesContainer"
-          class="flex-1 overflow-y-auto px-6 py-4"
+          class="flex-1 overflow-y-auto px-6 py-4 min-h-0"
         >
           <div class="space-y-6">
             <template v-if="messages.length === 0">
@@ -203,7 +201,7 @@ onMounted(() => {
             </div>
           </div>
         </div>        <!-- Message Input -->
-        <div class="px-6 py-6 border-t border-gray-200">
+        <div class="px-6 py-4 border-t border-gray-200 flex-shrink-0">
           <form @submit.prevent="sendMessage" class="flex space-x-2">
             <div class="flex-1 min-w-0">
               <textarea
