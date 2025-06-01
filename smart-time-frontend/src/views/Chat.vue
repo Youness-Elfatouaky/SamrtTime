@@ -82,12 +82,12 @@ const renderMarkdown = (text) => {
 const getMessageClass = (message) => {
   const baseClasses = 'max-w-[80%] rounded-lg px-4 py-3 shadow-sm'
   if (message.role === 'user') {
-    return `${baseClasses} bg-blue-600 text-white self-end`
+    return `${baseClasses} bg-blue-600 text-white ml-auto` // Changed self-end to ml-auto
   }
   if (message.isError) {
-    return `${baseClasses} bg-red-100 text-red-900 self-start`
+    return `${baseClasses} bg-red-100 text-red-900 mr-auto` // Changed self-start to mr-auto
   }
-  return `${baseClasses} bg-gray-100 text-gray-900 self-start`
+  return `${baseClasses} bg-gray-100 text-gray-900 mr-auto` // Changed self-start to mr-auto
 }
 
 // Handle Ctrl+Enter to send message
@@ -170,14 +170,13 @@ onMounted(() => {
                 :class=" [
                   getMessageClass(message)
                 ]"
-              >
-                <div 
+              >              <div 
                   v-if="message.role === 'assistant'"
-                  class="prose prose-sm max-w-none"
+                  class="prose prose-sm max-w-none text-left"
                   v-html="renderMarkdown(message.content)"
                 >
                 </div>
-                <div v-else>
+                <div v-else class="text-left">
                   {{ message.content }}
                 </div>
               </div>
@@ -216,22 +215,12 @@ onMounted(() => {
               <div class="mt-0.5 text-xs text-gray-500">
                 Supports Markdown formatting
               </div>
-            </div>
-            <div class="flex flex-col justify-end space-y-2">
-              <button
-                type="button"
-                class="inline-flex items-center p-1.5 border border-gray-300 shadow-sm text-sm rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
-                title="Upload File (Coming Soon)"
-                disabled
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
-              </button>
+            </div>            
+            <div class="flex flex-col justify-center items-center space-y-1">
               <button
                 type="submit"
                 :disabled="loading || !newMessage.trim()"
-                class="inline-flex items-center p-1.5 border border-transparent text-sm rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                class="inline-flex items-center justify-center p-2 border border-transparent text-sm rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg 
                   v-if="!loading"
@@ -254,6 +243,17 @@ onMounted(() => {
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </button>
+              <!-- <button
+                type="button"
+                class="inline-flex items-center p-1.5 border border-gray-300 shadow-sm text-sm rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+                title="Upload File (Coming Soon)"
+                disabled
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button> -->
+              
             </div>
           </form>
         </div>
