@@ -15,24 +15,24 @@ Smart-Time is an AI-powered time management application that helps users organiz
 ## Screenshots
 
 ### Login Page
-![Login Page](screenshots/login.png)
-*Secure authentication system with login functionality*
+![Log in](https://github.com/user-attachments/assets/7b8e2b94-7a41-4b28-aae1-e00b359a5fd0)
+
 
 ### Dashboard
-![Dashboard](screenshots/dashboard.png)
-*Overview of your schedule, tasks, and upcoming meetings*
+![dashbord](https://github.com/user-attachments/assets/757314a7-9fee-4a47-b5ad-1daf8cc270fc)
+
 
 ### Meetings View
-![Meetings](screenshots/meetings.png)
-*Calendar view and list view for managing meetings*
+![meetings](https://github.com/user-attachments/assets/d3467200-35ee-4f12-afe0-8fabd10e4a42)
+
 
 ### Tasks Management
-![Tasks](screenshots/tasks.png)
-*Task management interface with priority settings*
+![Tasks](https://github.com/user-attachments/assets/25798deb-6789-43e7-a86f-f1c587ed574e)
+
 
 ### AI Chat Assistant
-![Chat Assistant](screenshots/chat.png)
-*Natural language interface for managing your schedule*
+![chat](https://github.com/user-attachments/assets/1bc9f099-f1ea-4aa4-823d-6ecd02957d09)
+
 
 ## Technology Stack
 
@@ -79,7 +79,7 @@ Configure your .env file with the following variables:
 ```env
 DATABASE_URL=mysql://username:password@localhost/smart_time_db
 OPENAI_API_KEY=your_openai_api_key_here
-GPT_MODEL=gpt-4o-mini  # Using GPT-4o-mini AI capabilities
+
 ```
 
 Make sure to:
