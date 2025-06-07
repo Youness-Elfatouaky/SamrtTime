@@ -17,9 +17,14 @@ def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db), current
     db.refresh(db_task)
     return db_task
 
+# @router.get("/", response_model=list[schemas.TaskOut])
+# def get_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+#     return db.query(models.Task).filter(models.Task.user_id == current_user.id).all()
 @router.get("/", response_model=list[schemas.TaskOut])
 def get_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(models.Task).filter(models.Task.user_id == current_user.id).all()
+    return db.query(models.Task).filter(
+        models.Task.user_id == current_user.id
+    ).order_by(models.Task.start_time.desc()).all()
 
 @router.get("/{task_id}", response_model=schemas.TaskOut)
 def get_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

@@ -16,9 +16,14 @@ def create_meeting(meeting: schemas.MeetingCreate, db: Session = Depends(get_db)
     db.refresh(db_meeting)
     return db_meeting
 
+# @router.get("/", response_model=list[schemas.MeetingOut])
+# def get_meetings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+#     return db.query(models.Meeting).filter(models.Meeting.user_id == current_user.id).all()
 @router.get("/", response_model=list[schemas.MeetingOut])
 def get_meetings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(models.Meeting).filter(models.Meeting.user_id == current_user.id).all()
+    return db.query(models.Meeting).filter(
+        models.Meeting.user_id == current_user.id
+    ).order_by(models.Meeting.start_time.desc()).all()
 
 @router.get("/{meeting_id}", response_model=schemas.MeetingOut)
 def get_meeting(meeting_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
