@@ -59,7 +59,7 @@ Smart-Time is an AI-powered time management application that helps users organiz
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/smart-time.git
+git clone https://github.com/Youness-Elfatouaky/smart-time.git
 cd smart-time
 ```
 
