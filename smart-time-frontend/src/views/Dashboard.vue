@@ -221,7 +221,7 @@ const currentHour = computed(() => {
                     {{ task.title }}
                   </p>
                   <p class="text-xs text-gray-500 mt-1">
-                    Due: {{ formatDateTime(task.end_time) }}
+                    Due: {{ formatDateTime(task.start_time) }}
                   </p>
                 </div>
                 <div 
