@@ -144,7 +144,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - OpenAI for providing the AI capabilities
 - Vue.js team for the excellent framework
 - FastAPI team for the powerful backend framework
-- All contributors and users of Smart-Time
 
----
-*Note: To add screenshots, create a `screenshots` folder in your project root and add your application screenshots with the corresponding names (login.png, dashboard.png, etc.)*
+
